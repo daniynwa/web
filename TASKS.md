@@ -444,6 +444,70 @@ Saat ini backend berjalan dalam mode mock (model belum dilatih).
 
 ---
 
+## Fase I — Market Overview Home & Halaman Saham Bertab ✅ SELESAI
+**Tujuan:** Halaman utama terminal tidak langsung menampilkan satu emiten (BBCA),
+melainkan ringkasan pasar (indeks global/Asia + top gainers/losers IDX). Saat
+pengguna mencari saham, tampil halaman bertab (Overview / Technicals / News)
+dengan period selector — Technicals lengkap bergaya Bloomberg.
+
+**Status:** Implementasi selesai. Backend lolos `py_compile`; frontend lolos
+`tsc --noEmit` (tsconfig.app.json). Runtime/Docker = "Verifikasi Manual" di bawah.
+
+### I1. Backend — Market Overview ✅
+**File:** `ridx-terminal/backend/app/api/endpoints_market.py` (baru),
+`services/yf_fetcher.py`, `services/idx_tickers.py`
+
+- [x] `GET /api/market/indices` — IHSG (^JKSE), Nikkei, Hang Seng, Straits Times,
+  S&P 500, NASDAQ. Reuse `fetch_current_price` (simbol `^...` lolos `normalize_ticker`),
+  cache `market:indices` 5 menit
+- [x] `GET /api/market/movers?limit=5` — top gainers/losers LQ45. Helper
+  `fetch_change_batch()` (satu `yf.download(period=2d)`, cache 5 menit) + konstanta `LQ45_TICKERS`
+- [x] Skema `IndexQuote`, `Mover`, `MoversResponse`; router didaftarkan di `main.py`
+
+### I2. Backend — Technicals ✅
+**File:** `ridx-terminal/backend/app/api/endpoints_technicals.py` (baru),
+`services/technicals.py` (baru), `models/schemas.py`
+
+- [x] `GET /api/stock/{ticker}/technicals?period=6mo` — satu payload untuk tab Technicals,
+  cache `technicals:{symbol}:{period}` (TTL OHLCV)
+- [x] `services/technicals.py`: `build_series` (OHLCV + SMA20/50, Bollinger, RSI, MACD,
+  volume MA20), `compute_signal` (agregasi 8 indikator → BUY/NEUTRAL/SELL + overall),
+  `compute_momentum` (5D/20D/60D, ATR, vol ratio), `compute_moving_averages`,
+  `compute_pivots` (pivot classic), `compute_fibonacci`
+- [x] Skema: `TechnicalsPoint/Response`, `SignalItem/TechnicalSignal`, `MomentumStats`,
+  `MovingAverageItem`, `PivotPoints`, `FibonacciLevel(s)`; reuse `preparator.compute_all_indicators`
+
+### I3. Frontend — Home & Tabs ✅
+**File:** `ridx-terminal/frontend/src/components/views/*`, `charts/*`, `store/terminalStore.ts`,
+`App.tsx`, `services/apiClient.ts`
+
+- [x] `activeTicker` jadi `string | null` (default `null` = home) + `goHome()`; `App.tsx`
+  jadi router tipis (null → `MarketOverview`, selain itu → `StockPage`)
+- [x] `MarketOverview.tsx` — baris indeks + tabel Top Gainers/Losers (klik baris → buka saham) + News
+- [x] `StockPage.tsx` — header (EQ, ticker, nama, harga, %chg, currency, exchange) + period
+  selector (1MO–MAX, default 6MO) + REFRESH + tab bar (OVERVIEW / FINANCIALS-disabled / TECHNICALS / NEWS)
+- [x] `tabs/OverviewTab.tsx` — grid lama (chart period-aware + MarketStats + MLSignal + TechIndicators + Watchlist)
+- [x] `tabs/TechnicalsTab.tsx` — 4 chart (Price/BB, RSI, MACD, Volume) + Technical Signal +
+  Momentum & Volatility + Moving Averages + Support/Resistance + Fibonacci
+- [x] `charts/LineChart.tsx` & `charts/HistogramChart.tsx` — wrapper lightweight-charts reusable
+- [x] `apiClient`: `getIndices`, `getMovers`, `getTechnicals` + tipe terkait
+- [x] `TopBar` logo → `goHome()`, tampilkan `MARKETS` saat home; `NewsFeed` sembunyikan
+  toggle per-ticker saat home
+- [x] `StockDashboard.tsx` lama diserap ke `OverviewTab.tsx` (dihapus)
+
+### Tab FINANCIALS — Ditunda
+- [ ] Konten Financials (cashflow, balance sheet, margin detail, target harga) — perlu ekspansi
+  `FundamentalData` + `fetch_fundamental`; saat ini tab ditampilkan nonaktif ("Segera")
+
+### Verifikasi Manual (belum dijalankan)
+- [ ] `GET /api/market/indices` & `/api/market/movers?limit=5` mengembalikan data (cache hit di call ke-2)
+- [ ] `GET /api/stock/BBCA/technicals?period=6mo` → series + signal + momentum + MA + pivot + fibonacci
+- [ ] Buka terminal → Market Overview (bukan BBCA); klik gainer/loser → StockPage
+- [ ] Cari BBCA → tab OVERVIEW & TECHNICALS tampil; ubah period → chart/angka berubah
+- [ ] `docker compose up -d --build terminal-backend terminal-frontend`
+
+---
+
 ## Prioritas Eksekusi
 
 ```
