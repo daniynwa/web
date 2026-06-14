@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($node = \"$env:ProgramFiles\\\\nodejs\\\\node.exe\"; & $node --check \"e:\\\\web\\\\regular-investor\\\\src\\\\data\\\\agreement.js\"; if \\($?\\) { \"SYNTAX OK\" })",
+      "Bash(python -m py_compile app/core/auth.py)",
+      "PowerShell($node = \"$env:ProgramFiles\\\\nodejs\\\\node.exe\"; $files = @\\(\"src\\\\lib\\\\subscription.js\",\"src\\\\lib\\\\user-auth.js\",\"src\\\\data\\\\agreement.js\"\\); Set-Location \"e:\\\\web\\\\regular-investor\"; foreach \\($f in $files\\) { & $node --check $f; if \\($?\\) { \"OK: $f\" } else { \"FAIL: $f\" } })",
+      "Bash(python -c ' *)",
+      "Bash(pip install *)",
+      "Bash(grep -rl \"dss-hybrid\" src)",
+      "Bash(grep -rl \"from.*lib/dss.js\\\\|lib/dss'\" src)",
+      "Bash(grep -rln \"runHybridDSS\\\\|dss-hybrid\" src)"
+    ]
+  }
+}

@@ -1,0 +1,196 @@
+# ═══════════════════════════════════════════════════════════════════════
+# Regular Investor Ecosystem — unified Docker Compose
+#
+# Brings up the whole stack:
+#   db               MariaDB (shared)
+#   redis            cache for the terminal backend
+#   app              regular-investor (Astro SSR)         — auth hub, news, subs
+#   terminal-backend ridx-terminal FastAPI + ML engine    — market data, OmniQuant
+#   terminal-frontend ridx-terminal React (Nginx)         — terminal UI
+#   nginx            host-based reverse proxy             — public entrypoint
+#
+# Usage:
+#   cp .env.example .env   # then fill in secrets
+#   docker compose up -d --build
+# ═══════════════════════════════════════════════════════════════════════
+
+networks:
+  apps_net:
+    name: apps_net
+    ipam:
+      config:
+        - subnet: 172.20.10.0/28   # .1–.14 usable
+
+volumes:
+  ri_db_data:
+  ridx_redis:
+  ridx_models:
+  ridx_data:
+  ri_ml_models:
+  ri_ml_data:
+
+services:
+  # ── Database ──────────────────────────────────────────────────────
+  db:
+    image: mariadb:latest
+    container_name: ri_db
+    restart: unless-stopped
+    networks:
+      apps_net:
+        ipv4_address: 172.20.10.3
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${DB_NAME:-regular_investor}
+      MYSQL_USER: ${DB_USER:-ri_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-your_strong_password_here}
+    ports:
+      - "3306:3306"
+    volumes:
+      - ri_db_data:/var/lib/mysql
+      - ./regular-investor/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./regular-investor/database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -u root -p$${MYSQL_ROOT_PASSWORD} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Cache ─────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: ri_redis
+    restart: unless-stopped
+    networks:
+      apps_net:
+        ipv4_address: 172.20.10.5
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save "" --appendonly no
+    volumes:
+      - ridx_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # ── Regular Investor (Astro SSR) ──────────────────────────────────
+  app:
+    build: ./regular-investor
+    container_name: ri_app
+    restart: unless-stopped
+    networks:
+      apps_net:
+        ipv4_address: 172.20.10.4
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4321
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-ri_user}
+      DB_PASSWORD: ${DB_PASSWORD:-your_strong_password_here}
+      DB_NAME: ${DB_NAME:-regular_investor}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      ADMIN_SECRET: ${ADMIN_SECRET:-change_this_secret_to_32chars!!}
+      USER_SECRET: ${USER_SECRET:-user_secret_change_me_32chars!!}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      TERMINAL_URL: ${TERMINAL_URL:-http://localhost:3001}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # RI's own ML engine — powers premium DSS analysis + portfolio quotes.
+      ML_ENGINE_URL: http://ml_engine:8000
+    ports:
+      - "3000:4321"
+    depends_on:
+      db:
+        condition: service_healthy
+      ml_engine:
+        condition: service_started
+
+  # ── Regular Investor ML engine (premium DSS + quotes) ─────────────
+  # Separate from the terminal's OmniQuant engine. Serves /api/v1/* on :8000
+  # and is consumed by the `app` service (dss-hybrid, stock.js, sync-prices).
+  ml_engine:
+    build: ./regular-investor/ml-engine
+    container_name: ri_ml_engine
+    restart: unless-stopped
+    networks:
+      apps_net:
+        ipv4_address: 172.20.10.9
+    environment:
+      WORKERS: 2
+    expose:
+      - "8000"
+    volumes:
+      - ri_ml_models:/app/models
+      - ri_ml_data:/app/data
+      # IDX ticker list (reuse the file already in the ridx-terminal repo).
+      - "./ridx-terminal/Daftar Saham  - 20260613.xlsx:/app/data/Daftar Saham.xlsx:ro"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
+
+  # ── R-IDX Terminal backend (FastAPI + ML) ─────────────────────────
+  terminal-backend:
+    build: ./ridx-terminal/backend
+    container_name: ridx_backend
+    restart: unless-stopped
+    networks:
+      apps_net:
+        ipv4_address: 172.20.10.6
+        # The terminal frontend's internal nginx proxies /api → http://backend:8001
+        aliases:
+          - backend
+    environment:
+      APP_ENV: production
+      APP_PORT: 8001
+      CORS_ORIGINS: ${TERMINAL_URL:-http://localhost:3001}
+      CACHE_TTL_SECONDS: 300
+      CACHE_TTL_OHLCV: 1800
+      NEWS_CACHE_TTL: 600
+      YF_HISTORY_PERIOD: 5y
+      # Must equal the RI USER_SECRET so tokens verify across services.
+      RI_USER_SECRET: ${USER_SECRET:-user_secret_change_me_32chars!!}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ridx_models:/app/models
+      - ridx_data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ── R-IDX Terminal frontend (React → Nginx) ───────────────────────
+  terminal-frontend:
+    build:
+      context: ./ridx-terminal/frontend
+      args:
+        # Baked at build time (Vite). Point at the public RI URL for the
+        # cross-origin watchlist/alerts API calls.
+        VITE_RI_URL: ${APP_URL:-http://localhost:3000}
+        VITE_API_URL: /api
+    container_name: ridx_frontend
+    restart: unless-stopped
+    networks:
+      apps_net:
+        ipv4_address: 172.20.10.7
+    ports:
+      - "3001:80"
+    depends_on:
+      - terminal-backend
+
+  # ── Public reverse proxy ──────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: ri_nginx
+    restart: unless-stopped
+    networks:
+      apps_net:
+        ipv4_address: 172.20.10.8
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+      - terminal-frontend
