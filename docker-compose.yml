@@ -153,6 +153,11 @@ services:
       # Must equal the RI USER_SECRET so tokens verify across services.
       RI_USER_SECRET: ${USER_SECRET:-user_secret_change_me_32chars!!}
       REDIS_URL: redis://redis:6379/0
+      # AI news sentiment (free LLM agents). Keys come from the root .env;
+      # empty = sentiment disabled. Models/warmer use code defaults.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      SENTIMENT_PROVIDERS: ${SENTIMENT_PROVIDERS:-gemini,groq}
       # IDX ticker universe for startup load + periodic ML retraining (Fase G).
       IDX_TICKERS_FILE: /app/data/Daftar Saham.xlsx
     volumes:
