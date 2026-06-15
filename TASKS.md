@@ -396,7 +396,7 @@ Backend kini berjalan dalam **mode ML** (model `.pkl` terlatih & tersimpan).
 - [x] `.JK` tickers dari `Daftar Saham *.xlsx` diverifikasi benar (957 ticker,
   registry di-prime sebelum fetch)
 - [x] Jalankan dari `ridx-terminal/backend/`:
-  `python -m app.ml_engine.auto_train [--tickers BBCA,TLKM,...] [--limit N] [--period 5y]`
+  `python -m app.ml_engine.auto_train [--universe liquid|lq45|bisnis27|kompas100|all] [--tickers ...] [--limit N] [--period 5y]`
   - Step 1: Fetch OHLCV (default 5y) per ticker IDX
   - Step 2: Hitung 22 indikator teknikal per ticker (skip 200 baris awal SMA200)
   - Step 3: Simpan ke `backend/data/training_data.csv`
@@ -405,12 +405,20 @@ Backend kini berjalan dalam **mode ML** (model `.pkl` terlatih & tersimpan).
 - [x] Verifikasi: `backend/models/{xgb_model,lgbm_model,ensemble_meta}.pkl` tersedia
 - [x] Test: prediksi BBCA → **ML mode** (XGB/LGBM proba nyata, bukan mock)
 
-> Training pertama dijalankan pada universe **LQ45** (~42 ticker likuid valid,
-> 5y, 44.200 baris). Hasil test set: XGBoost acc **0.755** / AUC **0.837**,
-> LightGBM acc 0.752, Ensemble acc 0.753. Bobot ensemble learned:
-> XGB 0.63 / LGBM 0.37. Untuk universe penuh ~957 ticker, jalankan tanpa
-> `--tickers` (akan jauh lebih lama; banyak emiten tipis/baru otomatis dilewati
-> via filter `MIN_ROWS`).
+> **Universe training = konstituen indeks likuiditas IDX (bukan seluruh ~957).**
+> Bursa Indonesia banyak saham tidak likuid / "gorengan" yang harganya digerakkan
+> bandar — pola teknikalnya menyesatkan model. Karena itu universe dibatasi ke
+> konstituen indeks resmi yang dikurasi IDX (likuiditas + kapitalisasi + tata kelola):
+> - `LQ45` (45), `BISNIS27` (27), `KOMPAS100` (100) → di `services/idx_tickers.py`
+> - `LIQUID_UNIVERSE` = union ketiganya = **100 nama** (LQ45 & Bisnis27 ⊂ Kompas100)
+> - Default `--universe liquid`. `--universe all` tetap tersedia untuk ~957 (hati-hati).
+>
+> Catatan: pakai keanggotaan indeks lebih benar daripada filter harga mentah —
+> mis. GOTO sempat di Rp50 (gocap) tapi sangat likuid; filter "harga>50" naif akan
+> salah membuangnya. List di-snapshot 2026-06, refresh tiap kuartal dari IDX.
+>
+> Smoke test awal (LQ45, ~42 ticker, 44.200 baris): XGBoost acc **0.755** /
+> AUC **0.837**, LightGBM 0.752, Ensemble 0.753 (bobot learned XGB 0.63 / LGBM 0.37).
 
 ### G2. Jadwalkan Re-training Periodik ✅
 **File:** `ridx-terminal/backend/scripts/retrain_cron.sh` (baru)
