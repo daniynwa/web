@@ -153,9 +153,13 @@ services:
       # Must equal the RI USER_SECRET so tokens verify across services.
       RI_USER_SECRET: ${USER_SECRET:-user_secret_change_me_32chars!!}
       REDIS_URL: redis://redis:6379/0
+      # IDX ticker universe for startup load + periodic ML retraining (Fase G).
+      IDX_TICKERS_FILE: /app/data/Daftar Saham.xlsx
     volumes:
       - ridx_models:/app/models
       - ridx_data:/app/data
+      # Ticker list (read-only) — without this, retraining falls back to ~50 names.
+      - "./ridx-terminal/Daftar Saham  - 20260613.xlsx:/app/data/Daftar Saham.xlsx:ro"
     depends_on:
       redis:
         condition: service_healthy

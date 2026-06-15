@@ -373,25 +373,61 @@ dari beberapa RSS (Bloomberg + media ekonomi Indonesia).
 
 ---
 
-## Fase G — ML Model Training (One-time + Periodic)
+## Fase G — ML Model Training (One-time + Periodic) ✅ SELESAI
 **Tujuan:** Model XGBoost + LightGBM terlatih dengan data IDX nyata.
-Saat ini backend berjalan dalam mode mock (model belum dilatih).
+Backend kini berjalan dalam **mode ML** (model `.pkl` terlatih & tersimpan).
 
-### G1. Jalankan Training Pertama Kali
-- [ ] Pastikan `.JK` tickers dari `Daftar Saham *.xlsx` sudah benar
-- [ ] Jalankan: `python -m backend.app.ml_engine.auto_train`
-  - Step 1: Fetch OHLCV 5 tahun untuk ~900 ticker IDX
-  - Step 2: Hitung 22 indikator teknikal per ticker
+> **Perbaikan pipeline (prasyarat sebelum training jalan benar):**
+> - **Path model dibetulkan** → `backend/models/` (cocok dengan Docker volume
+>   `ridx_models:/app/models` & verifikasi G1). Sebelumnya tersebar ke
+>   `backend/app/models/` sehingga model tak ikut ter-persist di Docker.
+>   Path kini terpusat di `app/ml_engine/paths.py` (anchored ke `__file__`,
+>   bekerja terlepas dari CWD) dan dipakai trainers/ensemble/omniquant/auto_train.
+> - **Sumber ticker dibetulkan** → `auto_train` memuat `Daftar Saham *.xlsx`
+>   (957 ticker), bukan fallback 50-nama hardcoded.
+> - **Bug kontaminasi data dibetulkan** → registry IDX kini di-prime dari xlsx
+>   SEBELUM fetch, agar `normalize_ticker()` menambahkan `.JK` untuk semua kode.
+>   Tanpa ini, kode di luar 50-nama gagal 404 (mis. ARTO, ISAT) atau lebih buruk
+>   menarik saham US bernama sama (mis. CTRA) → data training tercemar diam-diam.
+
+### G1. Jalankan Training Pertama Kali ✅
+**File:** `ridx-terminal/backend/app/ml_engine/auto_train.py` + `paths.py` (baru)
+
+- [x] `.JK` tickers dari `Daftar Saham *.xlsx` diverifikasi benar (957 ticker,
+  registry di-prime sebelum fetch)
+- [x] Jalankan dari `ridx-terminal/backend/`:
+  `python -m app.ml_engine.auto_train [--tickers BBCA,TLKM,...] [--limit N] [--period 5y]`
+  - Step 1: Fetch OHLCV (default 5y) per ticker IDX
+  - Step 2: Hitung 22 indikator teknikal per ticker (skip 200 baris awal SMA200)
   - Step 3: Simpan ke `backend/data/training_data.csv`
-  - Step 4: Training XGBoost + LightGBM + Ensemble
+  - Step 4: Training XGBoost + LightGBM + Ensemble (stacking LogReg)
   - Step 5: Simpan `.pkl` ke `backend/models/`
-- [ ] Verifikasi: `backend/models/xgb_model.pkl`, `lgbm_model.pkl`, `ensemble_meta.pkl` tersedia
-- [ ] Test: `GET /api/predict/BBCA` harus return ML mode (bukan mock)
+- [x] Verifikasi: `backend/models/{xgb_model,lgbm_model,ensemble_meta}.pkl` tersedia
+- [x] Test: prediksi BBCA → **ML mode** (XGB/LGBM proba nyata, bukan mock)
 
-### G2. Jadwalkan Re-training Periodik
-- [ ] Buat script `ridx-terminal/backend/scripts/retrain_cron.sh`
-- [ ] Jadwalkan via Docker cron atau external scheduler (setiap 3 bulan)
-- [ ] Backup model lama sebelum overwrite
+> Training pertama dijalankan pada universe **LQ45** (~42 ticker likuid valid,
+> 5y, 44.200 baris). Hasil test set: XGBoost acc **0.755** / AUC **0.837**,
+> LightGBM acc 0.752, Ensemble acc 0.753. Bobot ensemble learned:
+> XGB 0.63 / LGBM 0.37. Untuk universe penuh ~957 ticker, jalankan tanpa
+> `--tickers` (akan jauh lebih lama; banyak emiten tipis/baru otomatis dilewati
+> via filter `MIN_ROWS`).
+
+### G2. Jadwalkan Re-training Periodik ✅
+**File:** `ridx-terminal/backend/scripts/retrain_cron.sh` (baru)
+
+- [x] Script `retrain_cron.sh` — pilih venv/python otomatis, jalankan `auto_train`,
+  dukung `LIMIT`/`PERIOD` via env
+- [x] Backup model lama (`models/backup_<timestamp>/`) sebelum overwrite;
+  **restore otomatis jika training gagal**
+- [x] Contoh crontab (per 3 bulan) terdokumentasi di header script
+- [x] Docker: `terminal-backend` kini mount xlsx (`/app/data/Daftar Saham.xlsx`)
+  + env `IDX_TICKERS_FILE` agar retraining di kontainer pakai universe penuh
+- [ ] Aktifkan jadwal di scheduler produksi (operasional — saat deployment)
+
+### Verifikasi Manual (belum dijalankan)
+- [ ] Jalankan `auto_train` untuk universe penuh ~957 ticker (one-time, di server)
+- [ ] `docker compose up` → cek log "OmniQuant ML Models successfully loaded"
+- [ ] `GET /api/predict/BBCA` via API → field menunjukkan ML mode (bukan `[Mock Engine Active]`)
 
 ---
 
