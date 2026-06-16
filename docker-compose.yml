@@ -5,7 +5,7 @@
 #   db               MariaDB (shared)
 #   redis            cache for the terminal backend
 #   app              regular-investor (Astro SSR)         — auth hub, news, subs
-#   terminal-backend ridx-terminal FastAPI + ML engine    — market data, OmniQuant
+#   terminal-backend ridx-terminal FastAPI + ML engine    — market data, OmniQuant, Premium DSS (/api/v1)
 #   terminal-frontend ridx-terminal React (Nginx)         — terminal UI
 #   nginx            host-based reverse proxy             — public entrypoint
 #
@@ -26,8 +26,6 @@ volumes:
   ridx_redis:
   ridx_models:
   ridx_data:
-  ri_ml_models:
-  ri_ml_data:
 
 services:
   # ── Database ──────────────────────────────────────────────────────
@@ -95,41 +93,20 @@ services:
       TERMINAL_URL: ${TERMINAL_URL:-http://localhost:3001}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      # RI's own ML engine — powers premium DSS analysis + portfolio quotes.
-      ML_ENGINE_URL: http://ml_engine:8000
+      # Consolidated: premium DSS + portfolio quotes now served by the
+      # ridx-terminal backend (/api/v1/*) instead of a separate ml_engine.
+      ML_ENGINE_URL: http://terminal-backend:8001
     ports:
       - "3000:4321"
     depends_on:
       db:
         condition: service_healthy
-      ml_engine:
+      terminal-backend:
         condition: service_started
 
-  # ── Regular Investor ML engine (premium DSS + quotes) ─────────────
-  # Separate from the terminal's OmniQuant engine. Serves /api/v1/* on :8000
-  # and is consumed by the `app` service (dss-hybrid, stock.js, sync-prices).
-  ml_engine:
-    build: ./regular-investor/ml-engine
-    container_name: ri_ml_engine
-    restart: unless-stopped
-    networks:
-      apps_net:
-        ipv4_address: 172.20.10.9
-    environment:
-      WORKERS: 2
-    expose:
-      - "8000"
-    volumes:
-      - ri_ml_models:/app/models
-      - ri_ml_data:/app/data
-      # IDX ticker list (reuse the file already in the ridx-terminal repo).
-      - "./ridx-terminal/Daftar Saham  - 20260613.xlsx:/app/data/Daftar Saham.xlsx:ro"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      start_period: 60s
-      retries: 5
+  # NOTE: the standalone Regular Investor ML engine has been REMOVED.
+  # Premium DSS + portfolio quotes are now served by `terminal-backend`
+  # (/api/v1/*), consolidating the ecosystem onto a single Python backend.
 
   # ── R-IDX Terminal backend (FastAPI + ML) ─────────────────────────
   terminal-backend:

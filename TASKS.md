@@ -333,21 +333,19 @@ dari beberapa RSS (Bloomberg + media ekonomi Indonesia).
 - [x] `db` — MariaDB shared, mount `regular-investor/database/schema.sql` + `seed.sql`, healthcheck
 - [x] `redis` — Redis 7 alpine (256mb, allkeys-lru), volume `ridx_redis`, healthcheck
 - [x] `app` — regular-investor (Astro), env `USER_SECRET`, `APP_URL`, `TERMINAL_URL`, `ML_ENGINE_URL`, DB, OAuth
-- [x] `ml_engine` — **RI's own** Python engine (port 8000, `/api/v1/*`) untuk analisis Premium DSS +
-  harga portfolio. TERPISAH dari engine terminal. Mount xlsx dari `ridx-terminal/`.
-- [x] `terminal-backend` — FastAPI OmniQuant (port 8001), `RI_USER_SECRET=${USER_SECRET}`, `REDIS_URL`,
+- [x] `terminal-backend` — FastAPI OmniQuant + **Premium DSS** (port 8001), `RI_USER_SECRET=${USER_SECRET}`, `REDIS_URL`,
   CORS, **network alias `backend`** (agar nginx internal frontend `proxy_pass http://backend:8001` resolve)
 - [x] `terminal-frontend` — React→Nginx, build-arg `VITE_RI_URL`/`VITE_API_URL`
 - [x] `nginx` — reverse proxy publik (host-based)
-- [x] Network `apps_net` `172.20.10.0/28`; volumes db/redis/ridx_models/ridx_data/ri_ml_models/ri_ml_data
+- [x] Network `apps_net` `172.20.10.0/28`; volumes db/redis/ridx_models/ridx_data
 
-> ⚠️ PENTING — DUA engine ML terpisah:
-> - `regular-investor/ml-engine` (:8000, `/api/v1/analyze|quote|fundamentals`) → dipakai
->   analisis **Premium DSS** (`api/premium/dss/run.ts` → `dss-hybrid`) & **harga portfolio** (`lib/stock.js`).
-> - `ridx-terminal/backend` (:8001, `/api/stock|predict|news`) → dipakai **R-IDX Terminal** saja.
+> ✅ KONSOLIDASI ENGINE (lihat Fase J) — **satu engine Python** di `terminal-backend`:
+> - `/api/v1/analyze|quote|quotes/batch|fundamentals` → **Premium DSS** RI
+>   (`api/premium/dss/run.ts` → `dss-hybrid`, `lib/stock.js`, `fundamental-fetcher.js`)
+> - `/api/stock|predict|news|market` → **R-IDX Terminal**
 >
-> `src/lib/dss.js` (AHP/SAW/TOPSIS versi JS) sudah TIDAK dipakai — logika berat
-> dipindah ke `regular-investor/ml-engine` (Python). Jangan hapus `ml_engine` dari compose.
+> `regular-investor/ml-engine` (engine kedua) **sudah dihapus**. `app` memanggil DSS
+> via `ML_ENGINE_URL=http://terminal-backend:8001`. `src/lib/dss.js` (versi JS) tetap tidak dipakai.
 
 ### F2. Env & standalone compose ✅
 - [x] `web/.env.example` — semua variabel (USER_SECRET, DB, APP_URL, TERMINAL_URL, OAuth)
@@ -549,6 +547,49 @@ dengan period selector — Technicals lengkap bergaya Bloomberg.
 - [ ] Buka terminal → Market Overview (bukan BBCA); klik gainer/loser → StockPage
 - [ ] Cari BBCA → tab OVERVIEW & TECHNICALS tampil; ubah period → chart/angka berubah
 - [ ] `docker compose up -d --build terminal-backend terminal-frontend`
+
+---
+
+## Fase J — Konsolidasi Engine ML (DSS → terminal-backend) ✅ SELESAI
+**Tujuan:** Hilangkan engine Python ganda. Premium DSS RI dipindah ke
+`terminal-backend` sebagai router `/api/v1/*`, lalu `regular-investor/ml-engine`
+dihapus. Satu backend Python untuk OmniQuant + DSS.
+
+### J1. Port DSS ke terminal-backend ✅
+**File:** `ridx-terminal/backend/app/dss/` (baru) + `app/api/endpoints_dss.py`
+
+- [x] `features.py` (compute_all_features + FEATURE_COLUMNS DSS), `scoring.py`
+  (technical/fundamental/ml/risk), `decision.py` (AHP/TOPSIS/SAW + `run_full_analysis`)
+  — port verbatim dari `ml-engine/data_service.py` (paritas output)
+- [x] `data.py` — adapter ke `yf_fetcher` terminal (reuse Redis cache, mapping
+  kolom OHLCV lowercase + fundamental key RI: roe/npm/dividendYield ×100)
+- [x] `ml.py` — inferensi XGB+LGBM+Ensemble (reuse trainer terminal); **LSTM dibuang**
+  (sudah nonaktif di engine lama). Model `dss_*.pkl` terpisah dari OmniQuant
+- [x] `train.py` — latih model DSS pada universe 100-likuid (split kronologis)
+- [x] `endpoints_dss.py` — `/api/v1/analyze` (GET+POST/CSV), `/quote`, `/quotes/batch`,
+  `/fundamentals`; **internal, tanpa auth** (dipanggil server-to-server seperti ml-engine dulu)
+- [x] Router didaftarkan + model DSS di-load saat startup (`main.py`)
+
+### J2. Repoint Regular Investor ✅
+- [x] 4 file klien (`dss-hybrid/index.js`, `fundamental-fetcher.js`, `lib/stock.js`,
+  `api/premium/dss/run.ts`) → `ML_ENGINE_URL` default `http://terminal-backend:8001`
+- [x] Root `docker-compose.yml`: `app.ML_ENGINE_URL=http://terminal-backend:8001`,
+  `depends_on: terminal-backend`
+
+### J3. Bongkar ml-engine ✅
+- [x] Hapus service `ml_engine` + volume `ri_ml_models`/`ri_ml_data` + mount xlsx (kedua compose)
+- [x] Hapus folder `regular-investor/ml-engine/`
+- [x] Update `DEPLOY.md` (arsitektur, §8 training, troubleshooting, catatan konsolidasi) + TASKS F1
+
+> Catatan: model DSS ~0.55 AUC (realistis untuk arah harian; ML hanya 1 dari 4
+> kriteria). `dividendYield ×100` adalah quirk warisan yfinance yang dipertahankan
+> demi paritas. Bug `der`/`currentRatio = None` untuk bank juga sama seperti engine lama.
+
+### Verifikasi Manual (belum dijalankan — perlu Docker)
+- [ ] `docker compose up -d --build app terminal-backend`
+- [ ] `curl http://localhost:8001/api/v1/analyze/BBCA` → `{"ok":true,...}`
+- [ ] Login Premium → Analisis DSS jalan (via terminal-backend); harga portfolio ter-sync
+- [ ] `docker compose exec terminal-backend python -m app.dss.train` → model DSS terlatih
 
 ---
 

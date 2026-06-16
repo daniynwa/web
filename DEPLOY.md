@@ -10,24 +10,24 @@ fungsi & fitur sebelum produksi.
 
 ## 1. Arsitektur yang Di-deploy
 
-Satu file [`docker-compose.yml`](./docker-compose.yml) di root menjalankan 7 service:
+Satu file [`docker-compose.yml`](./docker-compose.yml) di root menjalankan 6 service:
 
 | Service | Image/Build | Port (host:container) | Fungsi |
 |---|---|---|---|
 | `db` | mariadb:latest | `3306:3306` | Database bersama |
 | `redis` | redis:7-alpine | — (internal) | Cache terminal backend |
 | `app` | `./regular-investor` | `3000:4321` | Regular Investor (Astro SSR) — auth, news, subs |
-| `ml_engine` | `./regular-investor/ml-engine` | — (internal :8000) | **Engine RI**: DSS premium + harga portfolio |
-| `terminal-backend` | `./ridx-terminal/backend` | `8001:8001` | **Engine Terminal**: OmniQuant (XGBoost/LightGBM) |
+| `terminal-backend` | `./ridx-terminal/backend` | `8001:8001` | **Satu engine Python**: OmniQuant (terminal) **+ Premium DSS** (`/api/v1`, dipakai RI) |
 | `terminal-frontend` | `./ridx-terminal/frontend` | `3001:80` | UI Terminal (React→Nginx) |
 | `nginx` | nginx:alpine | `80:80` | Reverse proxy host-based |
 
-> ⚠️ **Dua engine ML terpisah** (lihat README). `ml_engine` (:8000) melayani
-> analisis Premium di regular-investor. `terminal-backend` (:8001) melayani
-> R-IDX Terminal. Keduanya wajib hidup.
+> ✅ **Engine ML dikonsolidasi.** Dulu ada `ml_engine` RI terpisah (:8000) untuk
+> Premium DSS + harga portfolio. Kini logika itu dipindah ke `terminal-backend`
+> sebagai router `/api/v1/*`, jadi seluruh ekosistem berjalan di **satu backend
+> Python**. `app` memanggilnya via `ML_ENGINE_URL=http://terminal-backend:8001`.
 
 Network: `apps_net` (`172.20.10.0/28`). Volume persisten: `ri_db_data`,
-`ridx_redis`, `ridx_models`, `ridx_data`, `ri_ml_models`, `ri_ml_data`.
+`ridx_redis`, `ridx_models`, `ridx_data`.
 
 ---
 
@@ -125,9 +125,8 @@ price_alerts, dss_configs, kolom agreement, plan trial).
 
 Pantau startup:
 ```bash
-docker compose logs -f db          # tunggu "ready for connections"
-docker compose logs -f ml_engine   # start lambat (~60s), tunggu uvicorn ready
-docker compose logs -f terminal-backend
+docker compose logs -f db                # tunggu "ready for connections"
+docker compose logs -f terminal-backend  # uvicorn ready; load OmniQuant + DSS models
 ```
 
 ---
@@ -151,31 +150,30 @@ done
 
 ## 8. Training Model ML
 
-Saat awal, kedua engine berjalan dalam **mode mock/heuristik** sampai model `.pkl`
-dilatih. Model disimpan di volume (persisten lintas restart).
+Semua training kini di **satu container `terminal-backend`**. Sebelum model `.pkl`
+dilatih, engine berjalan mode mock/heuristik (ML netral). Model & data disimpan di
+volume `ridx_models` / `ridx_data` (persisten lintas restart). Universe default =
+100 saham likuid (LQ45 ∪ Bisnis27 ∪ Kompas100).
 
-### 8a. Engine Regular Investor (`ml_engine`) — DSS Premium
+### 8a. OmniQuant (terminal) — sinyal BUY/HOLD/SELL
 ```bash
-# Masuk ke container dan jalankan pipeline auto-train
-docker compose exec ml_engine python auto_trainer.py            # fetch + train
-# opsi:
-docker compose exec ml_engine python auto_trainer.py --fetch-only
-docker compose exec ml_engine python auto_trainer.py --train-only
+docker compose exec terminal-backend python -m app.ml_engine.auto_train            # fetch + train
+docker compose exec terminal-backend python -m app.ml_engine.auto_train --fetch-only
+docker compose exec terminal-backend python -m app.ml_engine.auto_train --train-only
+# universe lain: --universe lq45|bisnis27|kompas100|all
 ```
-- Membaca daftar ticker dari `data/Daftar Saham.xlsx` (sudah di-mount).
-- Output model → volume `ri_ml_models` (`/app/models`), data → `ri_ml_data` (`/app/data`).
-- Proses fetch ~900 ticker bisa lama (rate-limit yfinance) — biarkan berjalan.
 
-### 8b. Engine Terminal (`terminal-backend`) — OmniQuant *(opsional, Fase G)*
+### 8b. Premium DSS (`/api/v1`) — AHP/TOPSIS/SAW + ML
 ```bash
-docker compose exec terminal-backend python -m app.ml_engine.auto_train
+docker compose exec terminal-backend python -m app.dss.train                        # fetch + train
+docker compose exec terminal-backend python -m app.dss.train --train-only
 ```
-> Catatan: path internal `auto_train.py` mengacu ke `backend/...`; bila error path,
-> ini bagian Fase G yang belum difinalkan. Untuk DEV sekarang fokus ke 8a.
+- Membaca universe likuid dari `Daftar Saham.xlsx` (sudah di-mount ke terminal-backend).
+- Output model → volume `ridx_models` (`dss_*.pkl`), data → `ridx_data`.
 
 Setelah training, restart agar model dimuat ke memori:
 ```bash
-docker compose restart ml_engine terminal-backend
+docker compose restart terminal-backend
 ```
 
 ---
@@ -191,9 +189,6 @@ docker compose up -d --build terminal-backend
 
 # Perubahan terminal frontend ATAU mengubah APP_URL (VITE_RI_URL di-bake!)
 docker compose up -d --build terminal-frontend
-
-# Perubahan ml-engine RI
-docker compose up -d --build ml_engine
 ```
 
 ---
@@ -201,9 +196,9 @@ docker compose up -d --build ml_engine
 ## 10. Verifikasi Tiap Fitur (Smoke Test)
 
 ```bash
-# 1. Health engine
-curl -fsS http://localhost:8001/api/health        # terminal-backend → {"status":"ok",...}
-docker compose exec ml_engine curl -fsS http://localhost:8000/health   # ml_engine RI
+# 1. Health engine (satu backend: OmniQuant + DSS)
+curl -fsS http://localhost:8001/api/health             # terminal-backend → {"status":"ok",...}
+curl -fsS http://localhost:8001/api/v1/analyze/BBCA    # Premium DSS (dipakai RI) → {"ok":true,...}
 
 # 2. Regular Investor hidup
 curl -fsSI http://localhost:3000/                 # 200
@@ -218,7 +213,7 @@ Uji alur lewat browser:
 - [ ] Daftar/login user → `/portfolio/login`
 - [ ] `/pricing` → modal **Perjanjian Berlangganan** muncul, tombol bayar terkunci sampai dicentang
 - [ ] **Trial**: tombol "Coba Gratis 1 Hari" → setuju → masuk Terminal; cek tidak bisa trial 2×
-- [ ] **Analisis Premium DSS**: login premium → fitur analisis (memakai `ml_engine` RI :8000)
+- [ ] **Analisis Premium DSS**: login premium → fitur analisis (memakai `terminal-backend` `/api/v1` :8001)
 - [ ] **Terminal**: `/portfolio/profile` → "Buka Terminal" → data saham, indikator, OmniQuant, News Feed
 - [ ] **Watchlist/Alert** di terminal (memanggil API RI lintas-origin — cek CORS)
 - [ ] Admin: `/admin` → konfirmasi subscription terminal → role/feature ter-update
@@ -265,7 +260,7 @@ docker compose exec -T db sh -c \
 |---|---|
 | Terminal menolak akses (401/403) walau sudah langganan | `USER_SECRET` (app) ≠ `RI_USER_SECRET` (terminal). Di compose otomatis sama; pastikan `.env` punya `USER_SECRET`, lalu `up -d --build`. |
 | Watchlist/News error CORS di terminal | `TERMINAL_URL` salah, atau frontend di-build dengan `APP_URL` lama. Rebuild `terminal-frontend`. |
-| Analisis Premium gagal / timeout | `ml_engine` belum siap (start ~60s) atau model belum dilatih (mode mock). Cek `docker compose logs ml_engine`. |
+| Analisis Premium gagal / timeout | `terminal-backend` belum siap, `ML_ENGINE_URL` (app) tidak menunjuk ke `http://terminal-backend:8001`, atau model DSS belum dilatih (mode mock). Cek `docker compose logs terminal-backend`. |
 | Trial bisa diklaim berulang | Pastikan migrasi `004` terpasang & tabel `subscriptions.plan_type` punya `terminal_trial`. |
 | News feed kosong sebagian | Beberapa RSS (mis. Bloomberg) kadang diblokir/timeout — feed lain tetap tampil (by design). |
 | `db` gagal start, port 3306 bentrok | MySQL host lain aktif. Stop, atau ubah mapping port `db` di compose. |
@@ -285,9 +280,13 @@ docker compose exec -T db sh -c \
 
 ---
 
-## Catatan Konsolidasi Engine (rencana ke depan)
+## Catatan Konsolidasi Engine ✅ SELESAI
 
-Saat ini `ml_engine` (RI) dan `terminal-backend` (Terminal) berjalan terpisah dan
-tumpang tindih (yfinance, indikator, AHP/TOPSIS/SAW). Rencana: konsolidasi ke satu
-engine setelah analisa **akurasi & kestabilan** masing-masing di DEV. Sampai itu
-diputuskan, pertahankan keduanya.
+Dulu ada dua engine Python terpisah dan tumpang tindih: `ml_engine` (RI) dan
+`terminal-backend` (Terminal). Keduanya kini **disatukan** ke `terminal-backend`:
+- DSS Premium (AHP/TOPSIS/SAW + ML) → router `app/dss/` di `/api/v1/*`
+- OmniQuant (terminal) → `app/ml_engine/` seperti sebelumnya
+- RI memanggil DSS via `ML_ENGINE_URL=http://terminal-backend:8001`
+
+`regular-investor/ml-engine/` dan volume `ri_ml_models`/`ri_ml_data` sudah dihapus.
+LSTM (yang sudah nonaktif) tidak ikut diport.

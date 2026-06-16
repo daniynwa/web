@@ -27,7 +27,7 @@ Platform investasi Indonesia yang terdiri dari dua layanan terintegrasi: portal 
     │  ✅ News & Articles │  ┌───────────▼───────────────┐
     │  ✅ Portfolio       │  │   ridx-terminal/backend   │
     │  ✅ Premium DSS     │  │   Python FastAPI :8001    │
-    │     (→ ml_engine)  │  │   (OmniQuant terminal)    │
+    │   (→ /api/v1 DSS)  │  │  (OmniQuant + Premium DSS)│
     │  ✅ Admin Panel     │  │  ✅ Market Data (YFinance) │
     │                    │  │  ✅ 22 Technical Indicators│
     └────────┬───────────┘  │  ✅ OmniQuant ML Engine   │
@@ -61,15 +61,15 @@ web/
 │   │   ├── lib/
 │   │   │   ├── user-auth.js    ← HMAC token auth (SSO hub)
 │   │   │   ├── subscription.js ← plan management + trial
-│   │   │   ├── dss-hybrid/     ← thin client ke ml-engine RI (/api/v1/analyze)
+│   │   │   ├── dss-hybrid/     ← thin client ke terminal-backend (/api/v1/analyze)
 │   │   │   ├── dss.js          ← AHP/SAW/TOPSIS (JS, LEGACY — tidak dipakai)
-│   │   │   └── stock.js        ← harga portfolio (→ ml-engine RI)
+│   │   │   └── stock.js        ← harga portfolio (→ terminal-backend /api/v1)
 │   │   ├── pages/
 │   │   │   ├── api/user/       ← login, register, me, subscription, trial
-│   │   │   ├── api/premium/dss ← analisis premium (→ ml-engine RI :8000)
+│   │   │   ├── api/premium/dss ← analisis premium (→ terminal-backend /api/v1 :8001)
 │   │   │   ├── api/admin/      ← artikel, subscriptions, users
 │   │   │   └── api/portfolio/  ← CRUD portfolio
-│   ├── ml-engine/             ← Python engine RI (:8000) — DSS premium + quotes
+│   │   (ml-engine RI dihapus — DSS dikonsolidasi ke ridx-terminal/backend/app/dss)
 │   ├── database/
 │   │   ├── schema.sql
 │   │   └── seed.sql
@@ -78,11 +78,12 @@ web/
 └── ridx-terminal/              ← Bloomberg-inspired IDX Terminal
     ├── backend/                ← Python FastAPI + ML Engine
     │   ├── app/
-    │   │   ├── api/            ← endpoints_stock.py, endpoints_predict.py
-    │   │   ├── ml_engine/      ← omniquant.py, trainers.py, ensemble.py
+    │   │   ├── api/            ← endpoints_stock.py, endpoints_predict.py, endpoints_dss.py (/api/v1)
+    │   │   ├── ml_engine/      ← omniquant.py, trainers.py, ensemble.py (OmniQuant)
+    │   │   ├── dss/            ← Premium DSS (AHP/TOPSIS/SAW) — dipindah dari ml-engine RI
     │   │   ├── services/       ← yf_fetcher.py, preparator.py, idx_tickers.py
     │   │   └── core/           ← config.py (+ auth.py akan ditambahkan)
-    │   ├── models/             ← xgb_model.pkl, lgbm_model.pkl (dihasilkan auto_train)
+    │   ├── models/             ← xgb/lgbm/ensemble + dss_*.pkl (dihasilkan auto_train / dss.train)
     │   └── data/               ← training_data.csv (dihasilkan auto_train)
     ├── frontend/               ← React 19 + Vite 8 + Tailwind v4
     │   └── src/
