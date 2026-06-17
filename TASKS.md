@@ -418,6 +418,18 @@ Backend kini berjalan dalam **mode ML** (model `.pkl` terlatih & tersimpan).
 > Smoke test awal (LQ45, ~42 ticker, 44.200 baris): XGBoost acc **0.755** /
 > AUC **0.837**, LightGBM 0.752, Ensemble 0.753 (bobot learned XGB 0.63 / LGBM 0.37).
 
+### G3. Kalibrasi Probabilitas (isotonic) ✅
+**File:** `trainers.py` (XGBoostTrainer/LightGBMTrainer `.calibrate()`), `auto_train.py`
+
+- [x] Kalibrator isotonic per model, di-fit pada **val set** (`FrozenEstimator` —
+  pengganti `cv="prefit"` yang dihapus di sklearn 1.9); disimpan di `.pkl` (format dict)
+- [x] `predict_proba` otomatis pakai kalibrator bila ada (`predict_proba_raw` untuk banding);
+  `load` toleran format lama (raw estimator)
+- [x] Stacking ensemble dilatih dari proba **terkalibrasi**; metrik **Brier + ECE** di evaluator
+- [x] Hasil: ECE turun ~38% (XGB 0.083→0.052, LGBM 0.085→0.052), akurasi/AUC tetap (0.74/0.83).
+  Efek nyata: bar XGB vs LGBM tidak lagi kontradiktif/overconfident (mis. BBCA 9.2% vs 9.3% UP)
+- [ ] DSS (`app/dss`) belum dikalibrasi — kandidat lanjutan (pola sama)
+
 ### G2. Jadwalkan Re-training Periodik ✅
 **File:** `ridx-terminal/backend/scripts/retrain_cron.sh` (baru)
 
