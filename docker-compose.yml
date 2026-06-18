@@ -144,13 +144,15 @@ services:
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       SENTIMENT_PROVIDERS: ${SENTIMENT_PROVIDERS:-gemini,groq}
       # Telegram buzz alerts
-      TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
-      BUZZ_ALERT_ENABLED=true
-      BUZZ_ALERT_INTERVAL=900
-      BUZZ_ALERT_MIN_MENTIONS=2
-      BUZZ_ALERT_TOP_N=10
-      BUZZ_ALERT_MAX_PER_CYCLE=5
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      BUZZ_ALERT_ENABLED: "true"
+      BUZZ_ALERT_INTERVAL: 900
+      BUZZ_ALERT_MIN_MENTIONS: 2
+      BUZZ_ALERT_TOP_N: 10
+      BUZZ_ALERT_MAX_PER_CYCLE: 5
+      # Public site URL used in the Telegram alert's "Buka Regular Investor" link.
+      PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-https://regular-investor.com}
       # IDX ticker universe for startup load + periodic ML retraining (Fase G).
       IDX_TICKERS_FILE: /app/data/Daftar Saham.xlsx
       TZ: ${TZ:-Asia/Jakarta}
