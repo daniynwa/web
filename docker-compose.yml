@@ -142,7 +142,8 @@ services:
       # empty = sentiment disabled. Models/warmer use code defaults.
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
-      SENTIMENT_PROVIDERS: ${SENTIMENT_PROVIDERS:-gemini,groq}
+      HF_TOKEN: ${HF_TOKEN:-}
+      SENTIMENT_PROVIDERS: ${SENTIMENT_PROVIDERS:-gemini,groq,hf1,hf2,hf3}
       # Telegram buzz alerts
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
