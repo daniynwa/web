@@ -3,7 +3,7 @@ import { check, sleep } from 'k6';
 
 // Konfigurasi ini akan ditimpa oleh variabel --vus dan --duration dari CLI
 export const options = {
-    vus: 10,
+    vus: 500,
     duration: '30s',
     thresholds: {
         http_req_duration: ['p(95)<1000'], // 95% request harus selesai di bawah 1 detik

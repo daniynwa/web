@@ -1,7 +1,7 @@
 param (
     [string]$WebUrl = "http://app.regular-investor.local",
     [string]$TerminalUrl = "http://terminal.regular-investor.local",
-    [int]$Vus = 50,
+    [int]$Vus = 500,
     [string]$Duration = "30s"
 )
 
