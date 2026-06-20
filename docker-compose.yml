@@ -98,6 +98,8 @@ services:
       TERMINAL_URL: ${TERMINAL_URL:-http://localhost:3001}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      EMAIL_FROM: ${EMAIL_FROM}
       # Consolidated: premium DSS + portfolio quotes now served by the
       # ridx-terminal backend (/api/v1/*) instead of a separate ml_engine.
       ML_ENGINE_URL: http://terminal-backend:8001
