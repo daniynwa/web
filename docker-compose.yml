@@ -19,7 +19,7 @@ networks:
     name: apps_net
     ipam:
       config:
-        - subnet: 172.20.10.0/28   # .1–.14 usable
+        - subnet: 172.20.10.0/28 # .1–.14 usable
 
 volumes:
   ri_db_data:
@@ -50,7 +50,7 @@ services:
       - ./regular-investor/database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
       - /etc/localtime:/etc/localtime:ro
     healthcheck:
-      test: ["CMD-SHELL", "mariadb-admin ping -u root -p$${MYSQL_ROOT_PASSWORD} || exit 1"]
+      test: [ "CMD-SHELL", "mariadb-admin ping -u root -p$${MYSQL_ROOT_PASSWORD} || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -70,7 +70,7 @@ services:
       - ridx_redis:/data
       - /etc/localtime:/etc/localtime:ro
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 30s
       timeout: 3s
       retries: 3
@@ -144,6 +144,9 @@ services:
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       HF_TOKEN: ${HF_TOKEN:-}
       SENTIMENT_PROVIDERS: ${SENTIMENT_PROVIDERS:-gemini,groq,hf1,hf2,hf3}
+      # BPS WebAPI (Badan Pusat Statistik)
+      BPS_API_KEY: ${BPS_API_KEY:-}
+      BPS_API_URL: ${BPS_API_URL:-https://webapi.bps.go.id/v1/api}
       # Telegram buzz alerts
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
