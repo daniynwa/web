@@ -103,6 +103,10 @@ services:
       # Consolidated: premium DSS + portfolio quotes now served by the
       # ridx-terminal backend (/api/v1/*) instead of a separate ml_engine.
       ML_ENGINE_URL: http://terminal-backend:8001
+      # Shared secret sent as X-Internal-Key on every internal /api/v1 call so the
+      # backend can reject anything that isn't RI. MUST equal terminal-backend's
+      # INTERNAL_API_KEY. Empty = check disabled (nginx still blocks /api/v1/).
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
       TZ: ${TZ:-Asia/Jakarta}
     ports:
       - "3000:4321"
@@ -139,6 +143,10 @@ services:
       YF_HISTORY_PERIOD: 5y
       # Must equal the RI USER_SECRET so tokens verify across services.
       RI_USER_SECRET: ${USER_SECRET:-user_secret_change_me_32chars!!}
+      # Guards the internal-only /api/v1 (Premium DSS) router. Must equal the
+      # value RI sends (its INTERNAL_API_KEY). Empty = check disabled, relying on
+      # the terminal nginx /api/v1/ block alone.
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
       REDIS_URL: redis://redis:6379/0
       # AI news sentiment (free LLM agents). Keys come from the root .env;
       # empty = sentiment disabled. Models/warmer use code defaults.
